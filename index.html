@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Quest Video Maker</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 20%, #10245c, transparent 35%),
+        radial-gradient(circle at 80% 80%, #063c2c, transparent 35%),
+        #05070d;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 30px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 600px;
+      background: rgba(10, 15, 28, 0.88);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 20px;
+      padding: 35px;
+      box-shadow: 0 0 60px rgba(0,0,0,0.5);
+      backdrop-filter: blur(15px);
+    }
+
+    h1 {
+      text-align: center;
+      margin-top: 0;
+      margin-bottom: 35px;
+      letter-spacing: 2px;
+    }
+
+    label {
+      display: block;
+      margin-top: 20px;
+      margin-bottom: 8px;
+      font-weight: bold;
+      color: #aeb8d0;
+    }
+
+    input {
+      width: 100%;
+      padding: 15px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: #080c16;
+      color: white;
+      font-size: 17px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #4c7dff;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 30px;
+      padding: 16px;
+      border: none;
+      border-radius: 10px;
+      background: #3264ff;
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #4a78ff;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 25px;
+      min-height: 25px;
+      color: #aeb8d0;
+    }
+
+    #download {
+      display: none;
+      text-decoration: none;
+      text-align: center;
+      margin-top: 15px;
+      padding: 15px;
+      border-radius: 10px;
+      background: #19c968;
+      color: white;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+
+    <h1>🎮 QUEST VIDEO MAKER</h1>
+
+    <label>Quest</label>
+    <input
+      id="quest"
+      type="text"
+      value="BUY A PS5 🎮"
+      placeholder="BUY A PS5 🎮"
+    />
+
+    <label>Previous Balance</label>
+    <input
+      id="previousBalance"
+      type="number"
+      value="120"
+      min="0"
+    />
+
+    <label>Today's Loot</label>
+    <input
+      id="todaysLoot"
+      type="number"
+      value="5"
+    />
+
+    <label>Target</label>
+    <input
+      id="target"
+      type="number"
+      value="500"
+      min="1"
+    />
+
+    <button id="generate">
+      🎬 GENERATE VIDEO
+    </button>
+
+    <div id="status"></div>
+
+    <a id="download">
+      📥 DOWNLOAD MP4
+    </a>
+
+  </div>
+
+  <script src="app.js"></script>
+
+</body>
+</html>
