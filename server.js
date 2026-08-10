@@ -5,10 +5,7 @@ import path from "path";
 import os from "os";
 
 import { bundle } from "@remotion/bundler";
-import {
-  renderMedia,
-  selectComposition,
-} from "@remotion/renderer";
+import { renderMedia, selectComposition } from "@remotion/renderer";
 
 const app = express();
 
@@ -16,86 +13,45 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
+const CHROMIUM_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
 
-/* --------------------------------
-   Basic routes
--------------------------------- */
+// In-memory job store for video rendering
+const jobs = new Map();
 
-app.get("/", (req, res) => {
-  res.json({
-    status: "online",
-    message: "Quest Video Generator Backend 🎮",
-  });
-});
+/* ------------------------------------------------
+   1. Cache bundle on server startup (Saves 15s+)
+------------------------------------------------ */
+let cachedBundleLocation = null;
 
-app.get("/api/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "Backend connection working!",
-  });
-});
-
-/* --------------------------------
-   Calculate quest values
--------------------------------- */
-
-app.post("/api/calculate", (req, res) => {
-  const {
-    quest,
-    previousBalance,
-    todaysLoot,
-    target,
-  } = req.body;
-
-  const previous = Number(previousBalance);
-  const loot = Number(todaysLoot);
-  const goal = Number(target);
-
-  if (
-    !quest ||
-    !Number.isFinite(previous) ||
-    !Number.isFinite(loot) ||
-    !Number.isFinite(goal) ||
-    goal <= 0
-  ) {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid input",
+async function getBundle() {
+  if (!cachedBundleLocation) {
+    console.log("📦 Bundling Remotion project for startup...");
+    const entryPoint = path.join(process.cwd(), "src", "index.jsx");
+    cachedBundleLocation = await bundle({
+      entryPoint,
+      webpackOverride: (config) => config,
     });
+    console.log("✅ Remotion project bundled successfully!");
   }
+  return cachedBundleLocation;
+}
 
-  const newBalance = previous + loot;
+// Pre-bundle immediately on boot
+getBundle().catch((err) => console.error("❌ Pre-bundling error:", err));
 
-  const progress = Math.min(
-    100,
-    Math.round((newBalance / goal) * 100)
-  );
-
-  res.json({
-    success: true,
-    data: {
-      quest,
-      previousBalance: previous,
-      todaysLoot: loot,
-      newBalance,
-      target: goal,
-      progress,
-    },
-  });
+/* ------------------------------------------------
+   Routes
+------------------------------------------------ */
+app.get("/", (req, res) => {
+  res.json({ status: "online", message: "Quest Video Generator Backend 🎮" });
 });
 
-/* --------------------------------
-   Render video
--------------------------------- */
-
+/* ------------------------------------------------
+   Start Video Render (Async Background Job)
+------------------------------------------------ */
 app.post("/api/render", async (req, res) => {
   try {
-    const {
-      quest,
-      previousBalance,
-      todaysLoot,
-      target,
-    } = req.body;
+    const { quest, previousBalance, todaysLoot, target } = req.body;
 
     const previous = Number(previousBalance);
     const loot = Number(todaysLoot);
@@ -108,122 +64,102 @@ app.post("/api/render", async (req, res) => {
       !Number.isFinite(goal) ||
       goal <= 0
     ) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid input",
-      });
+      return res.status(400).json({ success: false, error: "Invalid input" });
     }
 
-    /* Calculate values */
-
     const newBalance = previous + loot;
+    const progress = Math.min(100, Math.round((newBalance / goal) * 100));
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    const progress = Math.min(
-      100,
-      Math.round((newBalance / goal) * 100)
-    );
+    // Save job status
+    jobs.set(jobId, { status: "rendering" });
 
-    console.log("Starting video render...");
-    console.log({
-      quest,
-      previous,
-      loot,
-      newBalance,
-      goal,
-      progress,
-    });
+    // Return jobId instantly to prevent HTTP Timeouts
+    res.json({ success: true, jobId });
 
-    /* Create temporary bundle */
+    // Background Processing
+    (async () => {
+      try {
+        console.log(`[${jobId}] Starting render...`);
+        const bundleLocation = await getBundle();
 
-    const entryPoint = path.join(
-      process.cwd(),
-      "src",
-      "index.jsx"
-    );
+        const chromiumOptions = {
+          executablePath: CHROMIUM_PATH,
+          args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        };
 
-    const bundleLocation = await bundle({
-      entryPoint,
-      webpackOverride: (config) => config,
-    });
+        const inputProps = {
+          quest,
+          previousBalance: previous,
+          todaysLoot: loot,
+          newBalance,
+          target: goal,
+          progress,
+        };
 
-    /* Get composition */
+        const composition = await selectComposition({
+          serveUrl: bundleLocation,
+          id: "QuestVideo",
+          inputProps,
+          chromiumOptions,
+        });
 
-    const composition = await selectComposition({
-      serveUrl: bundleLocation,
-      id: "QuestVideo",
-      inputProps: {
-        quest,
-        previousBalance: previous,
-        todaysLoot: loot,
-        newBalance,
-        target: goal,
-        progress,
-      },
-    });
+        const outputFile = path.join(os.tmpdir(), `${jobId}.mp4`);
 
-    /* Temporary output file */
+        await renderMedia({
+          composition,
+          serveUrl: bundleLocation,
+          codec: "h264",
+          outputLocation: outputFile,
+          inputProps,
+          chromiumOptions,
+        });
 
-    const outputFile = path.join(
-      os.tmpdir(),
-      `quest-${Date.now()}.mp4`
-    );
-
-    /* Render */
-
-    await renderMedia({
-      composition,
-      serveUrl: bundleLocation,
-      codec: "h264",
-      outputLocation: outputFile,
-      inputProps: {
-        quest,
-        previousBalance: previous,
-        todaysLoot: loot,
-        newBalance,
-        target: goal,
-        progress,
-      },
-    });
-
-    console.log("Video render completed!");
-
-    /* Send MP4 */
-
-    res.download(
-      outputFile,
-      "quest-video.mp4",
-      (error) => {
-        if (error) {
-          console.error("Download error:", error);
-        }
-
-        /* Delete temporary file */
-
-        fs.unlink(
-          outputFile,
-          () => {}
-        );
+        console.log(`[${jobId}] Render finished successfully!`);
+        jobs.set(jobId, { status: "completed", filePath: outputFile });
+      } catch (error) {
+        console.error(`[${jobId}] Render failed:`, error);
+        jobs.set(jobId, { status: "failed", error: error.message });
       }
-    );
-
+    })();
   } catch (error) {
-    console.error("VIDEO RENDER ERROR:");
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: "Video rendering failed",
-      details: error.message,
-    });
+    res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
 
-/* --------------------------------
-   Start server
--------------------------------- */
+/* ------------------------------------------------
+   Check Job Status
+------------------------------------------------ */
+app.get("/api/status/:jobId", (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ success: false, error: "Job not found" });
+  }
+  res.json({ success: true, ...job });
+});
 
+/* ------------------------------------------------
+   Download Rendered MP4
+------------------------------------------------ */
+app.get("/api/download/:jobId", (req, res) => {
+  const job = jobs.get(req.params.jobId);
+
+  if (!job || job.status !== "completed" || !job.filePath) {
+    return res.status(400).json({ success: false, error: "Video not ready" });
+  }
+
+  res.download(job.filePath, "quest-video.mp4", (err) => {
+    if (err) console.error("Download error:", err);
+
+    // Clean up temporary file & job memory after download
+    fs.unlink(job.filePath, () => {});
+    jobs.delete(req.params.jobId);
+  });
+});
+
+/* ------------------------------------------------
+   Start Server
+------------------------------------------------ */
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Quest Video Generator running on port ${PORT}`
-  );
+  console.log(`Quest Video Generator running on port ${PORT}`);
 });
